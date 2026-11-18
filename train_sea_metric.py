@@ -91,8 +91,31 @@ def crop_bbox(image, bbox, padding=0.10):
     return image.crop((left, top, right, bottom))
 
 
+def make_views(image, bbox=None, padding=0.10, image_is_pre_cropped=True,
+               full_view_mode="same"):
+    """Create the two views used by the classifier.
+
+    The published Sea train/validation Parquet stores ``image`` *after* the
+    original 640x640 image was cropped by bbox. Its bbox column still contains
+    coordinates in the original image, so applying that bbox again is invalid.
+    For that format, the safe representation is image + image (or image plus
+    a resized center crop). Real-test images are full photographs and have no
+    bbox, so they use the same image + image representation.
+    """
+    if image_is_pre_cropped or bbox is None:
+        if full_view_mode == "center_crop":
+            w, h = image.size
+            side = min(w, h)
+            left = (w - side) // 2
+            top = (h - side) // 2
+            second = image.crop((left, top, left + side, top + side))
+            return image, second
+        return image, image
+    return image, crop_bbox(image, bbox, padding)
+
+
 class SeaParquetDataset(Dataset):
-    def __init__(self, parquet_path, crop_padding=0.10):
+    def __init__(self, parquet_path, crop_padding=0.10, full_view_mode="same"):
         import pyarrow.parquet as pq
         table = pq.read_table(parquet_path, columns=["image", "bbox", "gt_class"])
         self.images = table["image"].to_pylist()
@@ -103,14 +126,22 @@ class SeaParquetDataset(Dataset):
             raise ValueError(f"Unknown Sea labels: {unknown}")
         self.labels = torch.tensor([LABEL_TO_ID[x] for x in labels], dtype=torch.long)
         self.crop_padding = crop_padding
+        # The repository's Parquet is made by convert_and_push_hf_parquet.py
+        # with crop_bbox=True: image bytes are already bbox crops.
+        self.image_is_pre_cropped = True
+        self.full_view_mode = full_view_mode
 
     def __len__(self):
         return len(self.labels)
 
     def __getitem__(self, index):
         image = decode_image(self.images[index])
-        crop = crop_bbox(image, self.bboxes[index], self.crop_padding)
-        return image, crop, self.labels[index]
+        full, second = make_views(
+            image, self.bboxes[index], self.crop_padding,
+            image_is_pre_cropped=self.image_is_pre_cropped,
+            full_view_mode=self.full_view_mode,
+        )
+        return full, second, self.labels[index]
 
 
 def collate_images(batch):
@@ -224,6 +255,8 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--supcon_weight", type=float, default=0.3)
     parser.add_argument("--crop_padding", type=float, default=0.10)
+    parser.add_argument("--full_view_mode", choices=["same", "center_crop"], default="same",
+                        help="Second view for already-cropped images; bbox is never reapplied.")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
     seed_everything(args.seed)
@@ -232,8 +265,8 @@ def main():
     print(f"Device: {device}")
     train_path, val_path = materialize_data(args.data)
     print(f"Train: {train_path}\nValidation: {val_path}")
-    train_ds = SeaParquetDataset(train_path, args.crop_padding)
-    val_ds = SeaParquetDataset(val_path, args.crop_padding)
+    train_ds = SeaParquetDataset(train_path, args.crop_padding, args.full_view_mode)
+    val_ds = SeaParquetDataset(val_path, args.crop_padding, args.full_view_mode)
     processor, backbone = make_backbone(args.model_id, device)
 
     train_features, train_labels = extract_features(train_ds, processor, backbone, device, args.backbone_batch_size)

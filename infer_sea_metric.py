@@ -15,7 +15,7 @@ from sklearn.metrics import accuracy_score, balanced_accuracy_score, confusion_m
 from torch.utils.data import DataLoader, Dataset
 from transformers import AutoImageProcessor, AutoModel
 
-from train_sea_metric import CLASSES, Head, crop_bbox, decode_image, vision_features
+from train_sea_metric import CLASSES, Head, decode_image, make_views, vision_features
 
 
 class RealParquetDataset(Dataset):
@@ -49,11 +49,11 @@ class RealParquetDataset(Dataset):
 
     def __getitem__(self, index):
         image = decode_image(self.images[index])
-        # selected_sea_only_real.parquet has no bbox; its image_bytes are
-        # already the selected object image, so use the same image for both
-        # branches. If bbox exists, use the same crop rule as training.
-        crop = crop_bbox(image, self.bboxes[index], self.crop_padding)
-        return self.names[index], image, crop, self.labels[index]
+        # Real images have no bbox and are full photographs. Keep the same
+        # two-view representation as the corrected training baseline.
+        full, second = make_views(image, self.bboxes[index], self.crop_padding,
+                                  image_is_pre_cropped=False)
+        return self.names[index], full, second, self.labels[index]
 
 
 def collate(batch):
