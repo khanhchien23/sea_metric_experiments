@@ -155,7 +155,8 @@ def extract_features(dataset, processor, model, device, batch_size):
     for full, crop, y in loader:
         images = full + crop
         encoded = processor(images=images, return_tensors="pt")
-        pixels = encoded["pixel_values"].to(device, non_blocking=True)
+        model_dtype = next(model.parameters()).dtype
+        pixels = encoded["pixel_values"].to(device=device, dtype=model_dtype, non_blocking=True)
         feat = vision_features(model, pixels).float()
         b = len(y)
         feat = torch.cat([feat[:b], feat[b:]], dim=1)
