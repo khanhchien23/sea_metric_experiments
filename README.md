@@ -1,5 +1,39 @@
 # Sea Metric Classifier
 
+## Frozen retrieval baseline (no fine-tuning)
+
+`sea_retrieval.py` embeds each synthetic TRAIN crop once with pretrained
+`facebook/dinov2-base` (CLS token, L2 normalization). Each query is embedded
+with the exact same encoder/processor; exact cosine nearest-neighbor search
+returns the synthetic neighbor's label as the prediction. Similarity is not
+a probability. No classifier head or fine-tuned checkpoint is used.
+
+```bash
+python sea_retrieval.py build --data KhanhChien/Data-Sea-Full-Synthetic --output /kaggle/working/sea_retrieval/gallery.pt --batch_size 16
+python sea_retrieval.py predict --gallery /kaggle/working/sea_retrieval/gallery.pt --data KhanhChien/Data-Sea-Full-Synthetic --filename data/validation-full-sea.parquet --column crop_image --output /kaggle/working/sea_retrieval/validation.csv
+python sea_retrieval.py predict --gallery /kaggle/working/sea_retrieval/gallery.pt --data KhanhChien/Data-Qwen3.5-SFT-Sea-Only --output /kaggle/working/sea_retrieval/real_predictions.csv
+```
+
+The commands download only the requested Parquet file. Outputs include CSV
+predictions with top-5 gallery IDs/labels/similarities, metrics, per-class
+reports and a confusion matrix. Query ground truth is optional and is used
+only for metrics, never for search. Validation and real images are not added
+to the gallery. The build command rejects non-training filenames; ensure
+the supplied training data really is synthetic (a filename is not proof of
+provenance).
+
+Default prediction is nearest neighbor, fixed before real evaluation. An
+optional `build --rule class_topk --class_k 3` stores a class-balanced scoring
+rule (mean of each class's top-k similarities). Compare choices only on
+synthetic validation, not by selecting the highest real-test score.
+
+This is one vector **per image**, not one vector for the whole dataset.
+The native DINOv2 processor may center-crop wide images; this baseline does
+not fix object localization or synthetic-to-real domain shift. Synthetic
+validation and real-test metrics must be reported separately.
+
+Offline tests: `python -m unittest test_sea_retrieval -v`.
+
 Lightweight alternative to Qwen SFT for the 21-class Sea problem.
 
 It freezes `google/siglip2-base-patch16-224` and trains a small head with
