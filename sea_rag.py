@@ -80,6 +80,10 @@ def load_encoder(model_id, device):
         dtype = kwargs.pop("dtype", None)
         if dtype is not None: kwargs["torch_dtype"] = dtype
         model = AutoModel.from_pretrained(model_id, **kwargs)
+    # SigLIP AutoModel is multimodal.  For image-only retrieval, unwrap the
+    # vision tower so the forward pass does not require text input_ids.
+    if "siglip" in model_id.lower() and hasattr(model, "vision_model"):
+        model = model.vision_model
     return processor, model.to(device).eval().requires_grad_(False)
 
 def pooled(model, model_id, pixels):
@@ -167,3 +171,4 @@ def main():
     args=parser.parse_args(); args.func(args)
 
 if __name__=="__main__": main()
+
