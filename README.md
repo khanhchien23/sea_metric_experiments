@@ -23,6 +23,8 @@ vision tower:
    rate, strong but moderate augmentation, full-image loss, and auxiliary crop
    loss.
 3. `infer_sea_finetune.py` evaluates real images using the full-image branch.
+4. `ensemble_sea_finetune.py` can combine independently fine-tuned SigLIP2
+   and DINOv2 models; its weight is selected on synthetic validation only.
 
 The real Parquet remains evaluation-only. DINOv2 can be trained with the same
 trainer (`--kind dinov2`) and ensembled only after the SigLIP2 fine-tuned
